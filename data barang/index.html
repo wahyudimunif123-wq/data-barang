@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Barang</title>
+  <style>
+    /* ===== CSS: tampilan ===== */
+    :root {
+      --bg: #eef2f1;
+      --kartu: #ffffff;
+      --teks: #1d2b2a;
+      --garis: #d3dcda;
+      --aksen: #0f6b5c;
+      --bahaya: #b3261e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--teks);
+      font-family: system-ui, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin: 8px 0 16px; }
+    h2 { font-size: 1.05rem; margin: 0 0 12px; }
+    section {
+      background: var(--kartu);
+      border: 1px solid var(--garis);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    form { display: grid; gap: 12px; }
+    label { display: grid; gap: 4px; font-size: .9rem; font-weight: 600; }
+    input, select {
+      font: inherit;
+      padding: 10px;
+      border: 1px solid var(--garis);
+      border-radius: 6px;
+      width: 100%;
+    }
+    input:focus, select:focus, button:focus-visible {
+      outline: 2px solid var(--aksen);
+      outline-offset: 1px;
+    }
+    button {
+      font: inherit;
+      font-weight: 600;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--aksen);
+      color: #fff;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    button[hidden] { display: none; }
+    button.batal { background: transparent; color: var(--teks); border: 1px solid var(--garis); }
+    button.aksi { background: transparent; padding: 4px 8px; }
+    button.edit { color: var(--aksen); }
+    button.hapus { color: var(--bahaya); }
+    .tombol-form { display: flex; gap: 8px; }
+    .tombol-form button[type="submit"] { flex: 1; }
+    #pesan { color: var(--bahaya); min-height: 1.2em; margin: 0; font-size: .9rem; }
+    .bar-atas {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .bar-atas input { max-width: 260px; }
+    .ringkasan { font-size: .9rem; margin: 0; }
+    .tabel-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--garis); white-space: nowrap; }
+    td.harga, th.harga { text-align: right; }
+    tr:hover td { background: #f3f7f6; }
+    tr.sedang-edit td { background: #e3f1ee; }
+    .status { color: #556; padding: 12px 0 0; margin: 0; }
+    .status.error { color: var(--bahaya); }
+    @media (min-width: 600px) {
+      form { grid-template-columns: 1fr 1fr; }
+      .penuh { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Data Barang</h1>
+
+    <!-- ===== HTML: form input / edit ===== -->
+    <section>
+      <h2 id="judul-form">Tambah barang</h2>
+      <form id="form-barang">
+        <label>ID Barang
+          <input type="text" id="id" placeholder="contoh: BRG001" required>
+        </label>
+        <label>Nama
+          <input type="text" id="nama" placeholder="contoh: Pulpen Hitam" required>
+        </label>
+        <label>Jenis
+          <select id="jenis" required>
+            <option value="">Pilih jenis</option>
+            <option>Alat Tulis</option>
+            <option>Elektronik</option>
+            <option>Makanan</option>
+            <option>Minuman</option>
+            <option>Lainnya</option>
+          </select>
+        </label>
+        <label>Harga (Rp)
+          <input type="number" id="harga" min="1" step="1" placeholder="contoh: 5000" required>
+        </label>
+        <p id="pesan" class="penuh" role="alert"></p>
+        <div class="tombol-form penuh">
+          <button type="submit" id="tombol-simpan">Simpan barang</button>
+          <button type="button" id="tombol-batal" class="batal" hidden>Batal</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== HTML: pencarian + tabel ===== -->
+    <section>
+      <div class="bar-atas">
+        <input type="search" id="cari" placeholder="Cari ID, nama, atau jenis" aria-label="Cari barang">
+        <p class="ringkasan" id="ringkasan"></p>
+      </div>
+      <div class="tabel-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>ID Barang</th>
+              <th>Nama</th>
+              <th>Jenis</th>
+              <th class="harga">Harga</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="isi-tabel"></tbody>
+        </table>
+      </div>
+      <p id="status" class="status"></p>
+    </section>
+  </main>
+
+  <!-- Library Supabase (dari CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // ===== JavaScript: logika =====
+
+    // 1. ISI DUA NILAI INI dari dashboard Supabase (lihat langkah-langkahnya di panduan)
+    const SUPABASE_URL = "sb_publishable_xZwXXp0RB5cAv-73SweaGA_g8svPLVB";
+    const SUPABASE_KEY = "https://vjroumabtyhpjbszcjtx.supabase.co";
+
+    // 2. Buat koneksi ke Supabase
+    const { createClient } = supabase;
+    const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Data barang yang sedang ditampilkan (salinan dari database)
+    let daftarBarang = [];
+
+    // Menyimpan id (uuid) barang yang sedang diedit. null = sedang tambah baru.
+    let sedangEdit = null;
+
+    // 3. Ambil elemen-elemen HTML yang akan dipakai
+    const form = document.getElementById("form-barang");
+    const judulForm = document.getElementById("judul-form");
+    const isiTabel = document.getElementById("isi-tabel");
+    const status = document.getElementById("status");
+    const ringkasan = document.getElementById("ringkasan");
+    const pesan = document.getElementById("pesan");
+    const cari = document.getElementById("cari");
+    const tombolSimpan = document.getElementById("tombol-simpan");
+    const tombolBatal = document.getElementById("tombol-batal");
+
+    // 4. Ubah angka jadi format rupiah, contoh: 5000 -> Rp 5.000
+    function rupiah(angka) {
+      return "Rp " + Number(angka).toLocaleString("id-ID");
+    }
+
+    // 5. Tampilkan pesan status di bawah tabel
+    function tampilStatus(teks, error) {
+      status.textContent = teks;
+      status.className = error ? "status error" : "status";
+    }
+
+    // 6. Ambil semua data dari database Supabase
+    async function muatData() {
+      tampilStatus("Memuat data...");
+      const { data, error } = await db
+        .from("barang")
+        .select("*")
+        .order("dibuat_pada", { ascending: true });
+
+      if (error) {
+        tampilStatus("Gagal memuat data: " + error.message, true);
+        return;
+      }
+      daftarBarang = data;
+      tampilkan();
+    }
+
+    // 7. Tampilkan data ke tabel (sudah memperhitungkan kata pencarian)
+    function tampilkan() {
+      const kata = cari.value.trim().toLowerCase();
+
+      const hasil = daftarBarang.filter(function (b) {
+        return [b.id_barang, b.nama, b.jenis].some(function (teks) {
+          return teks.toLowerCase().includes(kata);
+        });
+      });
+
+      isiTabel.innerHTML = "";
+
+      hasil.forEach(function (b, urutan) {
+        const baris = document.createElement("tr");
+        if (b.id === sedangEdit) baris.className = "sedang-edit";
+
+        baris.innerHTML =
+          "<td>" + (urutan + 1) + "</td>" +        // kolom No otomatis
+          "<td></td><td></td><td></td>" +
+          '<td class="harga"></td>' +
+          "<td>" +
+            '<button class="aksi edit" data-id="' + b.id + '">Edit</button>' +
+            '<button class="aksi hapus" data-id="' + b.id + '">Hapus</button>' +
+          "</td>";
+
+        // textContent dipakai supaya input pengguna aman (tidak dibaca sebagai kode HTML)
+        const sel = baris.children;
+        sel[1].textContent = b.id_barang;
+        sel[2].textContent = b.nama;
+        sel[3].textContent = b.jenis;
+        sel[4].textContent = rupiah(b.harga);
+
+        isiTabel.appendChild(baris);
+      });
+
+      if (daftarBarang.length === 0) {
+        tampilStatus("Belum ada barang. Isi form di atas untuk menambah.");
+      } else if (hasil.length === 0) {
+        tampilStatus("Tidak ada barang yang cocok dengan pencarian.");
+      } else {
+        tampilStatus("");
+      }
+
+      const total = daftarBarang.reduce(function (jumlah, b) {
+        return jumlah + b.harga;
+      }, 0);
+      ringkasan.textContent = daftarBarang.length + " barang, total " + rupiah(total);
+    }
+
+    // 8. Kembalikan form ke mode "tambah barang"
+    function keluarModeEdit() {
+      sedangEdit = null;
+      form.reset();
+      pesan.textContent = "";
+      judulForm.textContent = "Tambah barang";
+      tombolSimpan.textContent = "Simpan barang";
+      tombolBatal.hidden = true;
+    }
+
+    // 9. Saat form disubmit: validasi lalu simpan ke database
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault(); // cegah halaman reload
+
+      const idBarang = document.getElementById("id").value.trim();
+      const nama = document.getElementById("nama").value.trim();
+      const jenis = document.getElementById("jenis").value;
+      const harga = Number(document.getElementById("harga").value);
+
+      if (!idBarang || !nama) {
+        pesan.textContent = "ID dan nama tidak boleh kosong.";
+        return;
+      }
+      if (!(harga > 0)) {
+        pesan.textContent = "Harga harus lebih dari 0.";
+        return;
+      }
+
+      const barang = { id_barang: idBarang, nama: nama, jenis: jenis, harga: harga };
+
+      pesan.textContent = "";
+      tombolSimpan.disabled = true;
+
+      let hasil;
+      if (sedangEdit === null) {
+        hasil = await db.from("barang").insert(barang);                    // mode tambah
+      } else {
+        hasil = await db.from("barang").update(barang).eq("id", sedangEdit); // mode edit
+      }
+
+      tombolSimpan.disabled = false;
+
+      if (hasil.error) {
+        // Kode 23505 = melanggar aturan unik (ID barang kembar)
+        if (hasil.error.code === "23505") {
+          pesan.textContent = "ID " + idBarang + " sudah dipakai. Gunakan ID lain.";
+        } else {
+          pesan.textContent = "Gagal menyimpan: " + hasil.error.message;
+        }
+        return;
+      }
+
+      keluarModeEdit();
+      await muatData();
+      document.getElementById("id").focus();
+    });
+
+    // 10. Tombol Edit dan Hapus di dalam tabel
+    isiTabel.addEventListener("click", async function (e) {
+      const tombol = e.target.closest("button");
+      if (!tombol) return;
+      const id = tombol.dataset.id;
+      const barang = daftarBarang.find(function (b) { return b.id === id; });
+      if (!barang) return;
+
+      if (tombol.classList.contains("edit")) {
+        // Isi form dengan data lama lalu pindah ke mode edit
+        document.getElementById("id").value = barang.id_barang;
+        document.getElementById("nama").value = barang.nama;
+        document.getElementById("jenis").value = barang.jenis;
+        document.getElementById("harga").value = barang.harga;
+        sedangEdit = id;
+        pesan.textContent = "";
+        judulForm.textContent = "Edit barang";
+        tombolSimpan.textContent = "Simpan perubahan";
+        tombolBatal.hidden = false;
+        tampilkan();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        document.getElementById("nama").focus();
+      }
+
+      if (tombol.classList.contains("hapus")) {
+        if (confirm("Hapus barang " + barang.nama + "?")) {
+          const { error } = await db.from("barang").delete().eq("id", id);
+          if (error) {
+            tampilStatus("Gagal menghapus: " + error.message, true);
+            return;
+          }
+          if (sedangEdit === id) keluarModeEdit();
+          await muatData();
+        }
+      }
+    });
+
+    // 11. Tombol Batal dan kolom pencarian
+    tombolBatal.addEventListener("click", function () {
+      keluarModeEdit();
+      tampilkan();
+    });
+    cari.addEventListener("input", tampilkan);
+
+    // 12. Saat halaman dibuka: cek konfigurasi, lalu muat data dari database
+    if (SUPABASE_URL.startsWith("ISI_DENGAN")) {
+      tampilStatus("Isi SUPABASE_URL dan SUPABASE_KEY di bagian <script> dulu.", true);
+    } else {
+      muatData();
+    }
+  </script>
+</body>
+</html>
